@@ -1,5 +1,8 @@
 # 油汙偵測專案 — Onboarding 版（GT_expand 分支 B）
 
+多波段 HNM 的實作與操作步驟見 [HNM.md](HNM.md)。既有實驗預設不啟用 HNM；
+`baseline-gt-expand-3fold` tag 保存加入 HNM 前的程式與凍結三折名冊。
+
 > 本目錄是從正式研究 repo `OIL_PROJECT_MutiBand_GT_expand` 分出來的**精簡版**，
 > 只保留「能跑出整個 pipeline」所需的程式碼與目前最強的已釋出架構設定。
 > 不含研究過程中的分析腳本、個人筆記、單元測試、實驗記錄與已否決的架構分支——

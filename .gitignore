@@ -22,6 +22,7 @@ __pycache__/
 # Local experiment configuration (portable examples remain tracked)
 main/local_*.yaml
 configs/*.local.yaml
+preprocess/hnm/*.local.yaml
 
 # Data and generated artifacts; frozen data_split text files ARE tracked
 MS6_sen2like/

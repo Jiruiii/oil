@@ -1,0 +1,32 @@
+# Paths are relative to THIS config file, not the working directory.
+# Assumes repo is /.../oil_dataset/OIL_PROJECT_MutiBand_GT_expand.
+split_dir: ../../data_split/patch_level_gt_expand
+baseline_bg_tsv: ../../data_split/patch_level_gt_expand_bg/bg_coords.tsv
+candidate_bg_tsv: ../../data_split/patch_level_gt_expand_bg/bg_coords.tsv
+vrt_dir: ../../../MS6_sen2like_vrt
+mask_dir: ../../../mask
+output_dir: ../../hnm_runs/oof_v1
+outer_folds: [1, 2, 3]
+inner_folds: 5
+seed: 42
+# null groups by scene. Optional TSV: scene<TAB>group (one row per scene).
+# An event grouping that conflicts with frozen outer splits fails explicitly.
+group_tsv: null
+patch_size: 256
+scale: 10000.0
+mean: [0.0, 0.1087, 0.1342, 0.1433, 0.0, 0.2734, 0.1958, 0.1363]
+std: [1.0, 0.2248, 0.2179, 0.2178, 1.0, 0.1850, 0.1242, 0.1049]
+model_name: tf_efficientnetv2_s
+# timm adapts pretrained RGB input weights to eight input bands.
+pretrained: true
+epochs: 70
+batch_size: 8
+workers: 4
+lr: 0.0001
+weight_decay: 0.01
+classifier_neg_ratio: 5
+device: cuda
+# Experimental starting point, NOT a paper-derived ratio.
+# Keep half of the train candidate pool; half hard, half facility-location.
+keep_fraction: 0.5
+hard_fraction: 0.5
