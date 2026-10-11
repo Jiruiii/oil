@@ -1,0 +1,102 @@
+# ==========================================
+# Portable 範本 — 複製這份改，不要直接改
+# experiments_CV_358clean_gt_expand_prithvi300m_dlv3_det.yaml
+# （那份保留原機器路徑，只作研究記錄用途，不是給新人拿來跑的起點）
+#
+# 用法：
+#   cp main/experiments.example.yaml main/local_gt_expand.yaml
+#   # 編輯 local_gt_expand.yaml，把下面標示 <FILL ME> 的地方換成你自己的路徑
+#   python main/main_runner.py --config main/local_gt_expand.yaml
+#
+# 只有兩種欄位需要你填：
+#   1. <DATA_DIR> ——你的資料集根目錄（Docker 用法對應
+#      `docker run -v /path/to/oil_dataset:/data`，容器內就是 /data；
+#      直接在 host 跑的話換成你資料集的實際絕對路徑）
+#   2. results_base_dir / excel_log_path ——你想要結果寫到哪裡
+#
+# 不需要你動的欄位：
+#   - cross_validation.split_dir / dataset.bg_coord_txt
+#     已經指向本目錄內建的 data_split/，這是跟正式 repo 逐檔一致、
+#     已凍結的 3-fold split 名冊，直接用即可，不用自己重切。
+#   - backbone_ckpt 預設指到 main/fetch_prithvi_checkpoint.py 的預設輸出位置，
+#     跑過那支腳本下載完權重後這個路徑就會存在，不用改。
+#
+# run 預設是 false：先確認上面的路徑都填對、資料都在，再手動改成 true 開跑。
+# ==========================================
+_paths:
+  stacked_tif_dir: &stacked_tif_dir '<DATA_DIR>/MS6_sen2like_vrt'   # <FILL ME>
+
+results_base_dir: './result-seg/CV_358clean_gt_expand_prithvi300m_dlv3_det'   # <FILL ME> 想存哪就改哪
+excel_log_path:   './result_excel/result_CV_358clean_gt_expand_prithvi300m_dlv3_det_log.xlsx'   # <FILL ME>
+
+experiments:
+
+  - experiment_name: 'local_gt_expand_run'
+    run: false                  # 確認路徑都對了再手動改成 true
+    mode: 'train'
+    seed: 42
+    base_model: ~
+    architecture: 'deeplabv3+'  # 歷史路由名（進 DeepLabAdapter），實際 family 由下行決定
+    architecture_cfg:
+      model_family: 'prithvi_eo_v2_dlv3'
+      backbone_ckpt: './pretrained_ckpt/Prithvi_EO_V2_300M.pt'   # 先跑 main/fetch_prithvi_checkpoint.py
+      input_size: 256
+      num_frames: 1
+      input_band_names: ['B01', 'B02', 'B03', 'B04', 'B08', 'B8A', 'B11', 'B12']
+      backbone_band_names: ['B02', 'B03', 'B04', 'B8A', 'B11', 'B12']
+      input_band_indices: [1, 2, 3, 5, 6, 7]
+      feature_indices: [23]     # [dlv3] 單一 tap＝最後層（terminal norm 後），程式 assert
+      aspp_atrous_rates: [6, 12, 18]   # 目前判定為現行值，程式 assert 不符即 raise
+      backbone_lr_mult: 0.1     # encoder 0.1× lr；DeepLabHead 整包全 lr
+      freeze_backbone: false
+      grad_checkpointing: false
+      min_physical_batch_size: 2 # ASPPPooling global pool→BN 的硬下限
+      in_channels: 8
+      num_classes: 2
+
+    cross_validation:
+      enabled: true
+      num_folds: 3
+      start_fold: 1
+      split_dir: './data_split/patch_level_gt_expand'   # 已內建，不用改
+
+    dataset:
+      labels_dir: '<DATA_DIR>/mask'   # <FILL ME>
+      target_class_index: 0
+      names:
+        0: 'Oil'
+        1: 'Background'
+      vrt_dir: *stacked_tif_dir
+      read_images_from_vrt: true
+      pixel_mapping:
+        0: 0
+        1: 1
+        2: 1
+        255: 1
+      class_weights: [1.0, 1.0]
+      loss:
+        type: 'tversky'
+        alpha: 0.3
+        beta: 0.7
+      bg_coord_txt: './data_split/patch_level_gt_expand_bg/bg_coords.tsv'   # 已內建，不用改
+      mean: [0.0, 0.1087, 0.1342, 0.1433, 0.0, 0.2734, 0.1958, 0.1363]
+      std:  [1.0, 0.2248, 0.2179, 0.2178, 1.0, 0.1850, 0.1242, 0.1049]
+
+    epochs: 300
+    patience: 25
+    imgsz: 256
+    batch_size: 16       # 卡比較小（例如 24GB 以下）先降這個，OOM 就再降
+    nominal_batch_size: 16
+    workers: 8
+    lr0: 0.00005
+    use_amp: true
+
+    post_tests:
+      - test_name: 'local_gt_expand_run_reconstruction'
+        run: true
+        reconstruction:
+          enabled: True
+          mode: 'gt_aware'
+          vrt_dir: *stacked_tif_dir
+          mask_dir: '<DATA_DIR>/mask'   # <FILL ME>，跟上面 labels_dir 同一個
+          patch_size: 256

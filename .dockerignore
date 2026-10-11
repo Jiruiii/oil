@@ -1,0 +1,13 @@
+# build context 只需要 requirements.txt + main/ + preprocess/
+# 其他跟「build image」無關的東西排除掉，避免傳輸多餘的 build context
+slide_assets/
+slide_assets_light/
+Docker/
+.git/
+.venv/
+**/__pycache__/
+**/*.pyc
+*.tif
+*.tiff
+*.vrt
+pretrained_ckpt/

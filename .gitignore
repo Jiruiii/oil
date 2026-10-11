@@ -1,0 +1,45 @@
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.cache/
+
+# Credentials and local editor/agent settings
+.env
+.env.*
+!.env.example
+.aws/
+.codex/
+.agents/
+.idea/
+.vscode/
+*.pem
+*.key
+
+# Local experiment configuration (portable examples remain tracked)
+main/local_*.yaml
+configs/*.local.yaml
+
+# Data and generated artifacts; frozen data_split text files ARE tracked
+MS6_sen2like/
+MS6_sen2like_vrt/
+mask/
+*.tif
+*.tiff
+*.vrt
+*.gpkg
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+pretrained_ckpt/
+result-seg/
+result_excel/
+hnm_runs/
+*.log
+*.pid
+.DS_Store

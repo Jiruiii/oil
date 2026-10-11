@@ -1,0 +1,88 @@
+# ==========================================
+# [P3 / ASPP-rate 實驗] Prithvi-300M + DeepLabV3(ASPP) head — 決定性 baseline 重跑
+#   rates=(6,12,18)（現行值），3-fold，作為 (2,4,6) 候選的「同決定性起跑線」comparator。
+#
+# 為何重跑：既有 dlv3 pilot（result-seg/..._dlv3_pilot，pooled 0.4167）是 2026-07-15/16
+#   在決定性修復 commit ba25391 之前跑的，不能當可辯護 baseline。本檔＝同一架構/協定，
+#   但在 ba25391 + CUBLAS_WORKSPACE_CONFIG=:4096:8 下乾淨 3-fold 重跑，寫入新資料夾。
+#   與候選 (2,4,6) 逐項凍結，唯一變因＝aspp_atrous_rates。
+#   設計＝analysis/p3_aspp_rate/preregistration.md（Claude×codex 2026-07-29）。
+# ⚠ 本檔僅為 config；不啟動任何訓練，須經 main_runner 明確呼叫才會跑。
+# ==========================================
+_paths:
+  stacked_tif_dir: &stacked_tif_dir '/home/alanyh/oil_dataset/new/full_band/MS6_sen2like_vrt'
+
+results_base_dir: '/mnt/backup/alanyh/oil_IR_Fullband/OIL_PROJECT_MutiBand_GT_expand/result-seg/CV_358clean_gt_expand_prithvi300m_dlv3_det'
+excel_log_path:   '/mnt/backup/alanyh/oil_IR_Fullband/OIL_PROJECT_MutiBand_GT_expand/result_excel/result_CV_358clean_gt_expand_prithvi300m_dlv3_det_log.xlsx'
+
+experiments:
+
+  - experiment_name: 'MS6_CV_358clean_gt_expand_prithvi300m_dlv3_det'
+    run: true
+    mode: 'train'
+    seed: 42                    # [C1] 全域 seed；實際 fold 用 seed + fold_idx（同 comparator）
+    base_model: ~
+    architecture: 'deeplabv3+'  # 歷史路由名（進 DeepLabAdapter），實際 family 由下行決定
+    architecture_cfg:
+      model_family: 'prithvi_eo_v2_dlv3'
+      backbone_ckpt: '/mnt/backup/alanyh/oil_IR_Fullband/OIL_PROJECT_MutiBand_GT_expand/pretrained_ckpt/Prithvi_EO_V2_300M.pt'
+      input_size: 256
+      num_frames: 1
+      input_band_names: ['B01', 'B02', 'B03', 'B04', 'B08', 'B8A', 'B11', 'B12']
+      backbone_band_names: ['B02', 'B03', 'B04', 'B8A', 'B11', 'B12']
+      input_band_indices: [1, 2, 3, 5, 6, 7]
+      feature_indices: [23]     # [dlv3] 單一 tap＝最後層（terminal norm 後），程式 assert
+      aspp_atrous_rates: [6, 12, 18]   # [P3-baseline] 現行值，程式 assert 不符即 raise
+      backbone_lr_mult: 0.1     # encoder 0.1× lr；DeepLabHead 整包全 lr
+      freeze_backbone: false
+      grad_checkpointing: false
+      min_physical_batch_size: 2 # ASPPPooling global pool→BN 的硬下限（同 UPerNet 前例）
+      in_channels: 8
+      num_classes: 2
+
+    cross_validation:
+      enabled: true
+      num_folds: 3              # [P3] 完整 3-fold
+      start_fold: 1
+      split_dir: '/mnt/backup/oil_dataset/new/full_band/data_split/3_fold_stratified_v2/patch_level_gt_expand'
+
+    dataset:
+      labels_dir: '/home/alanyh/oil_dataset/new/full_band/mask'
+      target_class_index: 0
+      names:
+        0: 'Oil'
+        1: 'Background'
+      vrt_dir: *stacked_tif_dir
+      read_images_from_vrt: true
+      pixel_mapping:
+        0: 0
+        1: 1
+        2: 1
+        255: 1
+      class_weights: [1.0, 1.0]
+      loss:
+        type: 'tversky'
+        alpha: 0.3
+        beta: 0.7
+      bg_coord_txt: '/mnt/backup/oil_dataset/new/full_band/data_split/3_fold_stratified_v2/patch_level_gt_expand_bg/bg_coords.tsv'
+      mean: [0.0, 0.1087, 0.1342, 0.1433, 0.0, 0.2734, 0.1958, 0.1363]
+      std:  [1.0, 0.2248, 0.2179, 0.2178, 1.0, 0.1850, 0.1242, 0.1049]
+
+    epochs: 300
+    patience: 25
+    imgsz: 256
+    batch_size: 16
+    nominal_batch_size: 16
+    workers: 8
+    lr0: 0.00005
+    use_amp: true
+
+    post_tests:
+      - test_name: 'CV_358clean_gt_expand_prithvi300m_dlv3_det_reconstruction'
+        run: true
+        reconstruction:
+          enabled: True
+          mode: 'gt_aware'
+          vrt_dir: *stacked_tif_dir
+          mask_dir: '/home/alanyh/oil_dataset/new/full_band/mask'
+          patch_size: 256

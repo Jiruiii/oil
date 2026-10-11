@@ -1,0 +1,57 @@
+{
+  "_comment": "[TODO/15] Prithvi-EO-2.0 vendored code 溯源(2026-07-13 Claude×Codex 共識第 4 案)。prithvi_backbone.py 與上游逐 byte 相同(header 不加註即為此故),parity 檢查=直接比對 sha256;prithvi_upernet.py 為改編 vendor,與上游差異全列於該檔 docstring。",
+  "prithvi_backbone.py": {
+    "upstream_repo": "https://huggingface.co/ibm-nasa-geospatial/Prithvi-EO-2.0-300M",
+    "upstream_file": "prithvi_mae.py",
+    "upstream_revision": "9eb1b1102806593963daa333bcc491b1c6f8562f",
+    "sha256": "9cee9a8cb17c3859d6365a7e58f723e0f4c08e3e29aa4b8e6523506db70321da",
+    "byte_identical_to_upstream": true,
+    "license": "apache-2.0",
+    "fetched_at": "2026-07-13"
+  },
+  "prithvi_upernet.py": {
+    "upstream_repo": "https://github.com/IBM/terratorch",
+    "upstream_tag": "v1.2.8",
+    "upstream_files": {
+      "terratorch/models/decoders/upernet_decoder.py": "d7a7b5c54d297808e5b34e3da863b90b144dbe060b1742dd1337f9b85975473d",
+      "terratorch/models/decoders/utils.py": "25297a8dcdf5c2b080748d55b76af7ed8832f841845017af9c007f51525d0738",
+      "terratorch/models/heads/segmentation_head.py": "4c5b9a81bc9678e28a821996f8a6f4ba4614c41531d8353dab9baee8d8d66513"
+    },
+    "byte_identical_to_upstream": false,
+    "deviations_documented_in": "prithvi_upernet.py docstring",
+    "license": "apache-2.0",
+    "fetched_at": "2026-07-13"
+  },
+  "official_finetune_reference": {
+    "config": "https://github.com/NASA-IMPACT/Prithvi-EO-2.0/blob/main/configs/sen1floods11.yaml",
+    "spec_for_prithvi_eo_v2_300": {
+      "necks": ["SelectIndices [5, 11, 17, 23]", "ReshapeTokensToImage"],
+      "decoder": "UperNetDecoder",
+      "decoder_channels": 256,
+      "decoder_scale_modules": true,
+      "head_dropout": 0.1,
+      "rescale_logits_to_input": true
+    }
+  },
+  "pretrained_config": {
+    "source": "config.json @ 9eb1b1102806593963daa333bcc491b1c6f8562f (sha256 748bc314d9b0653b00e3a2eaf14b69b4c27a295d73eb0b85112fe21bd2c36aa8)",
+    "img_size": 224,
+    "num_frames": 4,
+    "patch_size": [1, 16, 16],
+    "in_chans": 6,
+    "embed_dim": 1024,
+    "depth": 24,
+    "num_heads": 16,
+    "mlp_ratio": 4,
+    "coords_encoding": [],
+    "coords_scale_learn": false,
+    "bands_hls_names": ["B02", "B03", "B04", "B05", "B06", "B07"],
+    "bands_semantic": ["Blue", "Green", "Red", "NIR_Narrow", "SWIR_1", "SWIR_2"],
+    "bands_s2_equivalent": ["B02", "B03", "B04", "B8A", "B11", "B12"],
+    "mean_raw": [1087.0, 1342.0, 1433.0, 2734.0, 1958.0, 1363.0],
+    "std_raw": [2248.0, 2179.0, 2178.0, 1850.0, 1242.0, 1049.0],
+    "checkpoint_filename": "Prithvi_EO_V2_300M.pt",
+    "checkpoint_size_bytes": 1326658396,
+    "checkpoint_sha256": "faab2c8b776f0723f93431747603a7ec586a54fc45473613b4322c29752486e7"
+  }
+}
