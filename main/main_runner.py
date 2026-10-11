@@ -380,6 +380,11 @@ def run_cv_experiment(exp_config, results_base_dir, excel_path, desired_order, r
         fold_config['dataset']['test_txt'] = str(split_dir / f'test_fold{fold_idx}.txt')
         fold_config['dataset']['current_fold'] = fold_idx
 
+        # HNM is opt-in and replaces only this fold's training backgrounds.
+        if fold_config.get('hnm', {}).get('enabled', False):
+            from hnm_config import apply_hnm_to_fold
+            apply_hnm_to_fold(fold_config, fold_idx)
+
         fold_results_path = results_base_dir / f"{fold_ts}_{fold_name}"
         fold_results_path.mkdir(exist_ok=True, parents=True)
 
