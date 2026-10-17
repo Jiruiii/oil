@@ -1,0 +1,55 @@
+# ==========================================
+# MS5 5-fold CV — DeepLab HNM Probe
+# ==========================================
+# 目的：在初始資料集（patch_level_GB1.0，oil:bg = 1:1 隨機採樣）上訓一個
+#      DeepLabV3+ 模型作為 HNM 挖負樣本用的探勘模型（probe）。
+#
+# 與最終實驗版 (experiments_CV_MS5_deeplab.yaml) 差別：
+#   • split_dir 指向「未經 HNM/SI 的初始 split」，避免循環依賴
+#   • 只 1 seed（probe 只需一組權重，不做 statistical significance）
+#   • 拿掉 post_tests（HNM_SI/step1 會拿 best.pt 自己重跑推論，
+#     不需要 reconstruction / cloud_mask）
+#
+# 輸出：每 fold 一份 weights/best.pt（HNM_SI/step1_mine_fp.py 會讀）
+# ==========================================
+
+_paths:
+  stacked_tif_dir: &stacked_tif_dir '/home2/sun/OIL_PROJECT_dataset/full_band/processed/stack_tif'
+
+results_base_dir: 'OIL_PROJECT_MutiBand_0422_VRT_training/result-seg/CV_MS5_deeplab_HNM_probe'
+
+experiments:
+
+  - experiment_name: 'MS5_CV_deeplab_HNM_probe'
+    run: true
+    mode: 'train'
+    base_model: '~'
+    architecture: 'deeplabv3+'
+    architecture_cfg:
+      torchvision_model: 'deeplabv3_resnet50'
+      torchvision_weights: 'None'
+      in_channels: 11
+      num_classes: 2
+    cross_validation:
+      enabled: true
+      num_folds: 5
+      only_folds: [1, 2, 3, 4, 5]
+      split_dir: '/mnt/backups/sun/OIL_PROJECT_dataset/full_band/data_split_MS5/5_fold/patch_level_GB1.0'
+    dataset:
+      labels_dir: '/home2/sun/OIL_PROJECT_dataset/full_band/mask'
+      target_class_index: 0
+      names: {0: 'Oil', 1: 'Background'}
+      vrt_dir: *stacked_tif_dir
+      read_images_from_vrt: true
+      pixel_mapping: {0: 0, 1: 1, 2: 1, 255: 1}
+      class_weights: [1.0, 1.0]
+      spectral_indices:
+    epochs: 300
+    patience: 30
+    warmup_epochs: 20
+    imgsz: 256
+    batch_size: 16
+    workers: 8
+    lr0: 0.0001
+    seed: 42
+    post_tests: []

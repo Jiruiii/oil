@@ -1,6 +1,8 @@
 # 油汙偵測專案 — Onboarding 版（GT_expand 分支 B）
 
-多波段 HNM 的實作與操作步驟見 [HNM.md](HNM.md)。既有實驗預設不啟用 HNM；
+模型與兩種 HNM 方法的概覽見 [MODEL_HNM_OVERVIEW.md](MODEL_HNM_OVERVIEW.md)。
+已接入的 OOF 第一版操作見 [HNM.md](HNM.md)；學長 HNM_SI 的接入評估與待辦見
+[HNM_SI_INTEGRATION.md](HNM_SI_INTEGRATION.md)（尚未實作）。既有實驗預設不啟用 HNM；
 `baseline-gt-expand-3fold` tag 保存加入 HNM 前的程式與凍結三折名冊。
 
 > 本目錄是從正式研究 repo `OIL_PROJECT_MutiBand_GT_expand` 分出來的**精簡版**，
@@ -12,7 +14,7 @@
 
 ## 一、專案一句話
 
-用 8-band Sentinel-2（Sen2Like 調和）衛星影像訓練語意分割模型，對海面油汙做逐像素
+用 8-band Sentinel-2／Landsat（Sen2Like 調和）衛星影像訓練語意分割模型，對海面油汙做逐像素
 偵測。目前最強設定 = **Prithvi-EO-2.0-300M（ViT）encoder + DeepLabV3(ASPP) head +
 Tversky loss**，用 **GT-centric patch 策略**（每個 patch 圍繞真實油汙 bbox 取樣，
 另混入部分純背景 patch）訓練，3-fold cross-validation，每折訓練完自動把 patch 級

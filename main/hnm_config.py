@@ -5,6 +5,26 @@ from pathlib import Path
 from preprocess.hnm.data import read_background, sha256, split_manifest
 
 
+def _check_hnm_si_provenance(manifest, artifact, selected):
+    """HNM_SI artifacts must also carry intact candidate records and probe provenance."""
+    import csv
+    for key in ("arm", "mining_manifest_sha256", "candidates_sha256", "target_count", "shortfall"):
+        if key not in manifest:
+            raise ValueError(f"HNM_SI manifest lacks '{key}'")
+    if not (manifest.get("probe") or {}).get("checkpoint_sha256"):
+        raise ValueError("HNM_SI manifest lacks the probe checkpoint hash")
+    scored = artifact / "candidates_scored.tsv"
+    if sha256(scored) != manifest["candidates_sha256"]:
+        raise ValueError("HNM_SI candidate records checksum mismatch")
+    if manifest["target_count"] - manifest["selected_count"] != manifest["shortfall"]:
+        raise ValueError("HNM_SI shortfall does not match the selected count")
+    with open(scored, newline="", encoding="utf-8") as f:
+        flagged = {(r["scene"], int(r["x"]), int(r["y"]))
+                   for r in csv.DictReader(f, delimiter="\t") if r["status"] == "selected"}
+    if flagged != {r.key for r in selected}:
+        raise ValueError("HNM_SI selected backgrounds differ from the candidate records")
+
+
 def apply_hnm_to_fold(config, fold):
     hnm = config.get("hnm", {})
     if not hnm.get("enabled", False):
@@ -48,6 +68,8 @@ def apply_hnm_to_fold(config, fold):
         raise ValueError("HNM changed non-training backgrounds")
     if [r for r in combined if r.scene in scenes["train"]] != selected:
         raise ValueError("Combined HNM training backgrounds differ from selected manifest")
+    if str(manifest.get("method", "")).endswith("_train_only_v1"):
+        _check_hnm_si_provenance(manifest, artifact, selected)
     dataset["bg_coord_txt"] = str(mined.resolve())
     dataset["hnm_manifest"] = str((artifact / "manifest.json").resolve())
     print(f"[HNM] Fold {fold}: {len(selected)} training backgrounds; "

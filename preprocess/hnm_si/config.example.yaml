@@ -1,0 +1,54 @@
+# HNM_SI: probe false-positive mining + spectral-index filtering. See HNM_SI_INTEGRATION.md.
+# Paths are relative to THIS file. Assumes the repo is /.../oil_dataset/OIL_PROJECT_MutiBand_GT_expand.
+# Copy to preprocess/hnm_si/config.local.yaml (git-ignored) to change paths.
+split_dir: ../../data_split/patch_level_gt_expand
+baseline_bg_tsv: ../../data_split/patch_level_gt_expand_bg/bg_coords.tsv
+vrt_dir: ../../../MS6_sen2like_vrt
+mask_dir: ../../../mask
+output_dir: ../../hnm_runs/hnm_si_v1
+
+# Finished baseline run per outer fold. Each directory must hold args.yaml and
+# weights/best.pt. Architecture, mean/std and the oil class index are read from
+# that run's own args.yaml, so the probe is evaluated exactly as it was trained.
+probe_run_dirs:
+  1: ../../result-seg/CV_358clean_gt_expand_prithvi300m_dlv3_det/20260929-170815_local_gt_expand_run_fold1
+  2: ../../result-seg/CV_358clean_gt_expand_prithvi300m_dlv3_det/20260929-180401_local_gt_expand_run_fold2
+  3: ../../result-seg/CV_358clean_gt_expand_prithvi300m_dlv3_det/20260929-192132_local_gt_expand_run_fold3
+
+outer_folds: [1, 2, 3]
+seed: 42
+patch_size: 256
+stride: 192
+scale: 10000.0
+batch_size: 16
+device: cuda
+amp: true            # the baseline reconstruction also runs under autocast
+
+# hnm_si = FP mining + SI filter; hnm = FP mining only; random = control drawn from the
+# same mask/nodata-eligible window pool. All three share one mining pass per fold.
+arm: hnm_si
+
+# Original Step 1 gate and FP definition (FP = P(oil) > prob_threshold on mask==1).
+# Starting values from the original code, not validated for this dataset.
+rules:
+  min_mask1_ratio: 0.5
+  max_mask255_ratio: 0.3
+  max_nodata_ratio: 0.3
+  prob_threshold: 0.5
+  min_fp_pixels: 1
+
+# Original Step 2/3 settings. top_q drops the candidates closest to the oil reference.
+si:
+  top_q: 0.05
+  min_fp_pixels: 100
+  min_oil_pixels: 100
+  oil_pool_samples_per_scene: 1000
+  min_oil_pool: 1000
+  den_floor: 0.000001
+  clip: 10.0
+  reflectance_offset: 1000.0   # +1000 DN additive offset in the delivered rasters (sea floors at DN 1001)
+
+selection:
+  target_count: baseline      # same number of train backgrounds as the frozen baseline
+  allow_shortfall: false      # fail loudly instead of silently shrinking the quota
+  scene_outlier_sigma: null   # original rule used 3; off until its effect is inspected

@@ -1,4 +1,9 @@
-# 多波段 HNM 使用方式
+# 多波段 OOF HNM 第一版使用方式
+
+更新說明（2026-10-16）：本文件與下列指令只對應已接入的 EfficientNetV2-S＋OOF
+第一版，不是學長提供的分割誤報＋光譜過濾 HNM_SI。HNM_SI 尚未移植，接入方案見
+[HNM_SI_INTEGRATION.md](HNM_SI_INTEGRATION.md)，原始碼快照見
+[references/hnm_si_original](references/hnm_si_original/README.md)。兩種方法尚無正式 HNM 實驗結果。
 
 本實作在已凍結的三折實驗中，只篩選各折 **train** 的背景座標。
 原有 GT-centric 名冊與 val/test 背景不變。沒有啟用 `hnm.enabled` 的設定沿用原流程。
