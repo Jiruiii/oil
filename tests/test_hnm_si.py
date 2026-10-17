@@ -11,6 +11,7 @@ import yaml
 from rasterio.transform import from_origin
 
 from main.hnm_config import apply_hnm_to_fold
+from preprocess.export_hnm_selection import export
 from preprocess.hnm.data import Patch, read_background, sha256, write_background
 from preprocess.hnm_si import mining
 from preprocess.hnm_si.config import load_config
@@ -335,6 +336,39 @@ class PipelineTests(unittest.TestCase):
         (out / "manifest.json").write_text(json.dumps(manifest))
         with self.assertRaisesRegex(ValueError, "differ from the candidate records"):
             apply_hnm_to_fold(self.fold_config("hnm_si"), 1)
+
+    def test_export_writes_every_selected_patch_with_scores(self):
+        self.mine()
+        select_fold(self.config, 1, "hnm_si")
+        out = self.root / "preview"
+        n = export(self.arm_dir("hnm_si"), out, cols=2, rows=2)
+        self.assertEqual(n, 6)
+        self.assertEqual(len(list((out / "images").glob("*.png"))), 6)
+        self.assertEqual(len(list((out / "sheets").glob("sheet_*.png"))), 2)   # 6 tiles, 4 per sheet
+        index = pd.read_csv(out / "index.csv")
+        selected = read_background(self.arm_dir("hnm_si") / "selected_train_bg.tsv")
+        self.assertEqual({(r.scene, r.x, r.y) for r in selected},
+                         set(zip(index["scene"], index["x"], index["y"])))
+        self.assertTrue(index["d_si"].notna().all())
+        self.assertTrue((index["oil_pct"] == 0).all())
+        import cv2
+        self.assertEqual(cv2.imread(str(out / "images" / index["file"][0])).shape, (16, 32, 3))
+        self.assertTrue((out / "README.txt").read_text(encoding="utf-8").startswith("HNM selected"))
+
+    def test_export_refuses_partial_or_modified_selection(self):
+        self.mine(max_scenes=2)
+        self.write_config({"selection": {"target_count": 3}})
+        select_fold(self.config, 1, "random", allow_partial=True)
+        with self.assertRaisesRegex(ValueError, "completed runs"):
+            export(self.arm_dir("random"), self.root / "p1")
+        self.setUp()
+        self.mine()
+        select_fold(self.config, 1, "random")
+        tsv = self.arm_dir("random") / "selected_train_bg.tsv"
+        tsv.write_text(tsv.read_text() + "")
+        write_background(tsv, read_background(tsv)[:-1])
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            export(self.arm_dir("random"), self.root / "p2")
 
     def test_reselecting_into_finished_output_is_refused(self):
         self.mine()

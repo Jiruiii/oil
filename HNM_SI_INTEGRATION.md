@@ -202,3 +202,24 @@ CFG=preprocess/hnm_si/config.example.yaml
   合格窗，粗估探勘 1 小時內，三折合計數小時（GPU）。
 - 尚未執行完整三折探勘；候選數量是否足以支撐「等於基準數量」的配額，要等 `mine` 完成才知道。
 
+### 匯出被選中的圖片（給人檢視）
+
+`select` 完成後，可把實際餵入訓練的背景小圖輸出成資料夾：
+
+```bash
+.venv/bin/python -m preprocess.export_hnm_selection \
+  --fold-dir hnm_runs/hnm_si_v1/arms/hnm_si/fold_1
+```
+
+預設寫到該折目錄下的 `preview/`（可用 `--out` 指定，`--limit N` 只匯出前 N 張，
+`--no-individual` 只出總覽圖）。內容：
+
+- `images/`：每張一個 PNG，左為真彩色（B04/B03/B02，反射率扣 offset 後固定拉伸），
+  右為同一張疊上遮罩（洋紅＝未標註 255、黃＝Others 2）。被選中的小圖整張都會當背景訓練，
+  所以染色區域並非確認的海面。
+- `sheets/`：每頁 5×4 的總覽，標題含編號、日期＿感測器＿tile、座標、`n_fp`、`d_si`。
+- `index.csv`：完整場景名、座標、遮罩組成與各項分數；`README.txt`：來源與雜湊。
+
+同一支腳本也能讀 EfficientNet OOF 版的 `hnm_runs/oof_v1/fold_N`（分數欄位為 `el2n`）。
+只匯出 `status: complete` 且名冊雜湊與 manifest 相符的產物。
+
