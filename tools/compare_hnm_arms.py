@@ -4,6 +4,9 @@ Reads the per-scene tables that tools/analyze_baseline_fp.py wrote for each arm 
 plus one --run-dir analysis per arm), so every arm is scored by exactly the same code:
   recon     GT-aware reconstruction pixels (pooled Oil IoU, precision, recall, FP split)
   bg_patch  the frozen test background tiles (FP the main metric never scores)
+  combined  both together per scene: the background-inclusive Oil IoU
+            TP / (TP + FN + FP_reconstruction + FP_background_tiles)
+Boundary IoU (Cheng et al., CVPR 2021) comes from the reconstruction rows.
 
 Differences are paired per fold (same test scenes) with a scene bootstrap: test scenes are
 resampled with replacement, the same draw is applied to both arms, and the statistic is
@@ -22,7 +25,10 @@ import pandas as pd
 
 GT = ("confirmed_bg", "others", "unlabeled")
 BOUNDARY = ("near_oil", "oil_attached")
-PAIRS = (("C", "B"), ("D", "C"), ("D", "B"), ("B", "A"), ("C", "A"), ("D", "A"))
+PAIRS = (("C", "B"), ("D", "C"), ("D", "B"), ("B", "A"), ("C", "A"), ("D", "A"),
+         ("E", "B"), ("F", "E"), ("F", "B"), ("E", "C"), ("F", "D"), ("E", "A"), ("F", "A"),
+         ("R", "A"), ("R", "B"),      # R: baseline retrained with oil_ignore_ring
+         ("G", "C"), ("G", "G0"), ("G", "B"), ("G0", "C"), ("G", "A"), ("G0", "A"))      # G/G0: kNN-filtered / swapped C
 
 
 def load_arm(path):
@@ -33,8 +39,10 @@ def load_arm(path):
     tot["bg"] = sum(tot[f"gt_{g}"] for g in GT)
     # Recon rows are per coverage component and bg rows per tile; sum to scenes.
     keys = ["source", "fold", "scene", "sensor", "size_bin"]
+    if "b_inter" not in tot:
+        raise ValueError(f"{path} predates Boundary IoU; rerun tools/analyze_baseline_fp.py")
     scenes = tot.groupby(keys, as_index=False)[["tp", "fn", "fp", "bg", "fp_confirmed_bg",
-                                                 "fp_unlabeled"]].sum()
+                                                 "fp_unlabeled", "b_inter", "b_union"]].sum()
     tiles = tot[tot.source == "bg_patch"].groupby(["fold", "scene"]).agg(
         tiles=("fp", "size"), tiles_fp=("fp", lambda v: int((v > 0).sum())))
     scenes = scenes.merge(tiles.reset_index(), on=["fold", "scene"], how="left")
@@ -47,11 +55,15 @@ def load_arm(path):
             split[c] = 0
     scenes = scenes.merge(split, on=["source", "fold", "scene"], how="left").fillna(
         {"fp_boundary": 0, "fp_other": 0})
+    combined = scenes.groupby(["fold", "scene", "sensor", "size_bin"], as_index=False)[
+        [c for c in SUM_COLS if c in scenes]].sum(min_count=1)
+    scenes = pd.concat([scenes, combined.assign(source="combined")], ignore_index=True)
     info = json.loads((path / "run_info.json").read_text(encoding="utf-8"))
     return scenes, info
 
 
-SUM_COLS = ("tp", "fn", "fp", "bg", "fp_boundary", "fp_other", "tiles", "tiles_fp")
+SUM_COLS = ("tp", "fn", "fp", "bg", "fp_boundary", "fp_other", "tiles", "tiles_fp",
+            "b_inter", "b_union")
 
 
 def totals(df, weights=None):
@@ -69,7 +81,14 @@ def recon_stats(t):
                 "precision": t["tp"] / (t["tp"] + t["fp"]),
                 "recall": t["tp"] / (t["tp"] + t["fn"]),
                 "fp_per_M_bg": 1e6 * t["fp"] / t["bg"],
-                "fp_boundary": t["fp_boundary"], "fp_other": t["fp_other"], "fn": t["fn"]}
+                "fp_boundary": t["fp_boundary"], "fp_other": t["fp_other"], "fn": t["fn"],
+                "boundary_iou": t["b_inter"] / t["b_union"]}
+
+
+def combined_stats(t):
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return {"oil_iou_with_bg": t["tp"] / (t["tp"] + t["fn"] + t["fp"]),
+                "precision_with_bg": t["tp"] / (t["tp"] + t["fp"])}
 
 
 def bg_stats(t):
@@ -156,26 +175,33 @@ def main(argv=None):
                              for k in per[0] if k not in ("arm", "fold", "run")}})
                 continue
             rec, bg = df[(df.source == "recon") & (df.fold == f)], df[(df.source == "bg_patch") & (df.fold == f)]
+            comb = df[(df.source == "combined") & (df.fold == f)]
             m = metas[name][f]
             rows.append({"arm": name, "fold": f, "epochs": float(m["epochs"]),
                          "steps": float(m["steps"] or np.nan),
                          **{k: float(v) for k, v in recon_stats(totals(rec)).items()},
-                         **{k: float(v) for k, v in bg_stats(totals(bg)).items()}})
+                         **{k: float(v) for k, v in bg_stats(totals(bg)).items()},
+                         **{k: float(v) for k, v in combined_stats(totals(comb)).items()}})
     table = pd.DataFrame(rows)
     table.to_csv(out / "comparison_by_fold.csv", index=False)
-    view = table[["arm", "fold", "epochs", "steps", "oil_iou", "precision", "recall",
-                  "fp_per_M_bg", "fp_boundary", "fp_other", "fn", "bg_fp_per_M", "bg_tiles_fp_pct"]]
+    view = table[["arm", "fold", "epochs", "steps", "oil_iou", "oil_iou_with_bg", "boundary_iou",
+                  "precision", "recall", "fp_per_M_bg", "fp_boundary", "fp_other", "fn",
+                  "bg_fp_per_M", "bg_tiles_fp_pct"]]
     md += ["## 1. Per arm and fold\n",
            "recon: oil_iou / precision / recall / fp_per_M_bg over GT-aware reconstruction pixels; "
            "fp_boundary = near_oil + oil_attached FP px, fp_other = the rest. "
-           "bg_*: FP on the test background tiles (not part of the main metric).\n",
+           "bg_*: FP on the test background tiles. oil_iou_with_bg adds those FP to the oil union. "
+           "boundary_iou: Boundary IoU over the reconstruction pixels.\n",
            md_table(view.assign(**{c: view[c].round(0) for c in
                                    ("epochs", "steps", "fp_per_M_bg", "fp_boundary", "fp_other",
                                     "fn", "bg_fp_per_M")})), ""]
 
     # 2. paired differences
     diff_rows = []
-    for metric, source, stat in (("oil_iou", "recon", recon_stats), ("precision", "recon", recon_stats),
+    for metric, source, stat in (("oil_iou", "recon", recon_stats),
+                                 ("oil_iou_with_bg", "combined", combined_stats),
+                                 ("boundary_iou", "recon", recon_stats),
+                                 ("precision", "recon", recon_stats),
                                  ("recall", "recon", recon_stats),
                                  ("fp_per_M_bg", "recon", recon_stats),
                                  ("bg_fp_per_M", "bg_patch", bg_stats)):

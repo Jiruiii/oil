@@ -318,6 +318,13 @@ def run_reconstruction_gt_aware(recon_cfg, exp_config, model_path, results_path)
     if not mean or not std:
         raise ValueError('[recon_gt_aware] dataset.mean / std 必填（從 args.yaml 取）')
     pixel_mapping = ds_cfg.get('pixel_mapping', None)
+    # 選用的額外指標（預設關閉，未設定時輸出與舊版完全相同）：
+    #   bg_tiles: true        → 另推論本折 test 背景小圖，回報含背景誤報的 pooled Oil IoU
+    #   boundary_iou_px: N    → 回報 Boundary IoU（Cheng et al. 2021），邊界帶寬 N px
+    _bg_tiles = bool(recon_cfg.get('bg_tiles', False))
+    _boundary_px = int(recon_cfg.get('boundary_iou_px', 0) or 0)
+    if _bg_tiles or _boundary_px:
+        from metrics_extra import bg_tile_counts, boundary_counts
 
     # 載入模型（用 DeepLabAdapter，跟訓練同一路徑）
     from deeplab_adapter import DeepLabAdapter
@@ -405,6 +412,7 @@ def run_reconstruction_gt_aware(recon_cfg, exp_config, model_path, results_path)
     per_scene_iou = []
     cls_oil_inter = cls_oil_union = 0
     cls_bg_inter  = cls_bg_union  = 0
+    b_inter = b_union = 0
 
     for scene, coords in tqdm(by_scene.items(), desc='gt_aware_recon'):
         vrt_path = _find_vrt(vrt_dir, scene)
@@ -482,6 +490,12 @@ def run_reconstruction_gt_aware(recon_cfg, exp_config, model_path, results_path)
             cls_oil_union += int(((p == 0) | (g == 0)).sum())
             cls_bg_inter  += int(((p == 1) & (g == 1)).sum())
             cls_bg_union  += int(((p == 1) | (g == 1)).sum())
+        if _boundary_px:
+            _bi, _bu = boundary_counts(gt_mask == oil_class, (pred_canvas == oil_class) & v,
+                                       v, _boundary_px)
+            b_inter += _bi
+            b_union += _bu
+            per_scene_iou[-1].update({'boundary_inter': _bi, 'boundary_union': _bu})
 
         if _artifact_writer and _artifact_raw is not None:
             from predmask_codec import probability_reference, sha256_file
@@ -570,11 +584,23 @@ def run_reconstruction_gt_aware(recon_cfg, exp_config, model_path, results_path)
     import csv
     csv_path = out_dir / 'per_scene_iou.csv'
     with open(csv_path, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['scene'] + [f'iou_C{c}' for c in range(num_classes)])
+        writer = csv.DictWriter(f, fieldnames=['scene'] + [f'iou_C{c}' for c in range(num_classes)]
+                                + (['boundary_inter', 'boundary_union'] if _boundary_px else []))
         writer.writeheader()
         writer.writerows(per_scene_iou)
 
     pooled_oil = cls_oil_inter / cls_oil_union if cls_oil_union > 0 else 0.0
+    extra = {}
+    if _boundary_px:
+        extra['recon_gtaware_boundary_iou_px'] = _boundary_px
+        extra['recon_gtaware_pooled_boundary_iou'] = f'{(b_inter / b_union if b_union else 0.0):.4f}'
+    if _bg_tiles:
+        extra.update(_score_bg_tiles(ds_cfg, by_scene, vrt_dir, mask_dir, patch_size, mean, std,
+                                     device, in_channels, band_indices, spectral_index,
+                                     adapter.model, oil_class, out_dir, bg_tile_counts))
+        union_with_bg = cls_oil_union + extra['recon_gtaware_bg_tiles_fp_px']
+        extra['recon_gtaware_pooled_oil_iou_with_bg'] = (
+            f'{(cls_oil_inter / union_with_bg if union_with_bg else 0.0):.4f}')
     pooled_bg  = cls_bg_inter  / cls_bg_union  if cls_bg_union  > 0 else 0.0
     mean_oil = float(np.mean([s[f'iou_C{oil_class}'] for s in per_scene_iou])) if per_scene_iou else 0.0
     mean_miou = float(np.mean([np.mean([s[f'iou_C{c}'] for c in range(num_classes)]) for s in per_scene_iou])) if per_scene_iou else 0.0
@@ -585,6 +611,8 @@ def run_reconstruction_gt_aware(recon_cfg, exp_config, model_path, results_path)
     print(f'  per-scene mean Oil IoU = {mean_oil:.4f}')
     print(f'  per-scene mean mIoU    = {mean_miou:.4f}')
     print(f'  per-scene CSV: {csv_path}')
+    for _k, _v in extra.items():
+        print(f'  {_k} = {_v}')
     if _retain_legacy_images:
         print(f'  overlays   : {overlay_dir} ({len(per_scene_iou)} 張)')
     else:
@@ -600,4 +628,47 @@ def run_reconstruction_gt_aware(recon_cfg, exp_config, model_path, results_path)
         'recon_gtaware_mean_oil_iou':   f'{mean_oil:.4f}',
         'recon_gtaware_mean_miou':      f'{mean_miou:.4f}',
         'recon_gtaware_num_scenes':     len(per_scene_iou),
+        **extra,
     }
+
+
+def _score_bg_tiles(ds_cfg, by_scene, vrt_dir, mask_dir, patch_size, mean, std, device,
+                    in_channels, band_indices, spectral_index, model, oil_class, out_dir,
+                    bg_tile_counts):
+    """推論本折 test 場景的凍結背景小圖（bg_coord_txt 中屬於 test 場景的列），同一 TTA。
+
+    這些小圖不在 GT-aware 重組範圍內；判成油的像素全部是誤報，計入含背景的 Oil IoU。
+    """
+    import csv
+    bg_path = ds_cfg.get('bg_coord_txt')
+    if not bg_path or not Path(bg_path).exists():
+        raise ValueError('[recon_gt_aware] bg_tiles 需要 dataset.bg_coord_txt')
+    tiles = {}
+    with open(bg_path, newline='', encoding='utf-8') as f:
+        for r in csv.DictReader(f, delimiter='\t'):
+            if r['scene'] in by_scene:
+                tiles.setdefault(r['scene'], []).append((int(r['x']), int(r['y'])))
+    rows, fp_px, px = [], 0, 0
+    for scene, coords in tqdm(sorted(tiles.items()), desc='gt_aware_recon bg tiles'):
+        vrt_path = _find_vrt(vrt_dir, scene)
+        if vrt_path is None:
+            raise FileNotFoundError(f'[recon_gt_aware] bg tile VRT 找不到: {scene}')
+        with rasterio.open(str(mask_dir / f'{scene}.tif')) as msrc:
+            for x, y, tensor in _patch_iter(vrt_path, coords, patch_size, mean, std, device,
+                                            in_channels, band_indices=band_indices,
+                                            spectral_index=spectral_index):
+                pred, _ = _tta_predict_prob(model, tensor)
+                gt = msrc.read(1, window=Window(x, y, patch_size, patch_size),
+                               boundless=True, fill_value=MASK_IGNORE)
+                n_fp, n_px = bg_tile_counts(pred == oil_class, gt)
+                rows.append({'scene': scene, 'x': x, 'y': y, 'fp_px': n_fp, 'px': n_px})
+                fp_px += n_fp
+                px += n_px
+    with open(out_dir / 'bg_tiles.csv', 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=['scene', 'x', 'y', 'fp_px', 'px'])
+        writer.writeheader()
+        writer.writerows(rows)
+    return {'recon_gtaware_bg_tiles': len(rows), 'recon_gtaware_bg_tiles_fp_px': fp_px,
+            'recon_gtaware_bg_tiles_px': px,
+            'recon_gtaware_bg_tiles_with_fp': sum(r['fp_px'] > 0 for r in rows),
+            'recon_gtaware_bg_fp_per_M': f'{(1e6 * fp_px / px if px else 0.0):.1f}'}

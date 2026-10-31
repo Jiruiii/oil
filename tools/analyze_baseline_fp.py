@@ -49,6 +49,7 @@ for p in (REPO_ROOT, REPO_ROOT / "main"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
+from metrics_extra import boundary_counts  # noqa: E402
 from predmask_codec import decode_scene_coverage, decode_scene_final, load_scene_document  # noqa: E402
 from preprocess.export_hnm_selection import short_name, true_colour  # noqa: E402
 from preprocess.hnm.data import raster_index, read_background, split_manifest  # noqa: E402
@@ -188,8 +189,9 @@ def analyse_window(pred_oil, scored, mask, raw, scale, offset, near_n):
 class Collector:
     """Scene-level tables plus the top-k largest FP regions per (source, category) as crops."""
 
-    def __init__(self, out, top_k, scale, offset):
+    def __init__(self, out, top_k, scale, offset, boundary_px=8):
         self.out, self.top_k, self.scale, self.offset = out, top_k, scale, offset
+        self.boundary_px = boundary_px
         self.totals, self.fp_rows, self.sweep_rows, self.region_rows = [], [], [], []
         self.heaps = defaultdict(list)
         self._tie = 0
@@ -206,6 +208,9 @@ class Collector:
                    gt_oil=int((gt_s == 0).sum()),
                    **{f"gt_{v}": int((gt_s == k).sum()) for k, v in GT_LABELS.items()},
                    **{f"fp_{v}": int((fp & (mask == k)).sum()) for k, v in GT_LABELS.items()})
+        # Boundary IoU atoms (Cheng et al. 2021), same code as the reconstruction's option.
+        row["b_inter"], row["b_union"] = boundary_counts(mask == 0, pred_oil & scored, scored,
+                                                         self.boundary_px)
         self.totals.append(row)
         for k, v in GT_LABELS.items():
             counts = np.bincount(cat[fp & (mask == k)], minlength=len(CATEGORIES))
@@ -612,6 +617,7 @@ def main(argv=None):
     parser.add_argument("--fold", type=int, action="append", help="default: all outer folds")
     parser.add_argument("--out", default=str(REPO_ROOT / "hnm_runs" / "diagnostics"))
     parser.add_argument("--near-oil", type=int, default=8)
+    parser.add_argument("--boundary-px", type=int, default=8, help="Boundary IoU band width d")
     parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--skip-bg-patches", action="store_true", help="no GPU inference")
     parser.add_argument("--skip-backgrounds", action="store_true",
@@ -634,7 +640,7 @@ def main(argv=None):
     index = raster_index(config["vrt_dir"])
     bins, edges = scene_size_bins(config["split_dir"])
     offset = config["si"]["reflectance_offset"]
-    col = Collector(out, args.top_k, config["scale"], offset)
+    col = Collector(out, args.top_k, config["scale"], offset, args.boundary_px)
     device = None
     if not args.skip_bg_patches:
         import torch

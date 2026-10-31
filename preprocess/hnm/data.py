@@ -202,14 +202,17 @@ class WindowDataset:
     def __len__(self):
         return len(self.records)
 
-    def __getitem__(self, i):
+    def _read(self, p):
         import rasterio
-        import torch
         from rasterio.windows import Window
-        p = self.records[i]
         with rasterio.open(self.index[p.scene]) as src:
-            a = src.read(window=Window(p.x, p.y, self.size, self.size),
-                         boundless=True, fill_value=0).astype(np.float32) / self.scale
+            return src.read(window=Window(p.x, p.y, self.size, self.size),
+                            boundless=True, fill_value=0)
+
+    def __getitem__(self, i):
+        import torch
+        p = self.records[i]
+        a = self._read(p).astype(np.float32) / self.scale
         if not np.isfinite(a).all():
             raise ValueError(f"Nonfinite imagery: {p.key}")
         a[(a > 100) | (a < -100)] = 0  # match existing reflectance loader

@@ -26,7 +26,7 @@ def create_model(config, pretrained):
                              in_chans=len(config["mean"]), num_classes=2)
 
 
-def train_miner(records, index, config, output, seed, device):
+def train_miner(records, index, config, output, seed, device, dataset_cls=WindowDataset):
     seed_all(seed)
     model = create_model(config, pretrained=config["pretrained"]).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=config["lr"],
@@ -43,7 +43,7 @@ def train_miner(records, index, config, output, seed, device):
     for epoch in range(config["epochs"]):
         selected_neg = rng.sample(neg, min(len(neg), len(pos) * config["classifier_neg_ratio"]))
         samples = pos + selected_neg
-        loader = DataLoader(WindowDataset(samples, index, config, augment=True),
+        loader = DataLoader(dataset_cls(samples, index, config, augment=True),
                             batch_size=config["batch_size"], shuffle=True,
                             num_workers=config["workers"], generator=generator)
         model.train()

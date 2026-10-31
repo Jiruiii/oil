@@ -6,7 +6,7 @@ results_base_dir, excel_log_path, experiment_name, the post-test name, and an ad
 loss, splits, val/test backgrounds, evaluation) stays line-for-line identical; the script
 checks that by diffing against the baseline and refuses to write otherwise.
 
-  .venv/bin/python tools/make_hnm_arm_configs.py            # random, hnm, hnm_si
+  .venv/bin/python tools/make_hnm_arm_configs.py            # every arm with complete artifacts
   .venv/bin/python tools/make_hnm_arm_configs.py --arm hnm_si --seed 43
 """
 import argparse
@@ -19,7 +19,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BASE = REPO_ROOT / "main" / "local_gt_expand.yaml"
-ARMS = ("random", "hnm", "hnm_si")
+ARMS = ("random", "hnm", "hnm_si", "oof", "oof_si", "hnm_knn", "hnm_swap")
 ALLOWED = re.compile(r"^\s*(results_base_dir|excel_log_path|- experiment_name|- test_name|seed):")
 
 
@@ -71,8 +71,10 @@ def main(argv=None):
     parser.add_argument("--artifacts-root", default=str(REPO_ROOT / "hnm_runs" / "hnm_si_v1" / "arms"))
     args = parser.parse_args(argv)
     base_text = BASE.read_text(encoding="utf-8")
-    for arm in args.arm or ARMS:
-        root = Path(args.artifacts_root)
+    root = Path(args.artifacts_root)
+    arms = args.arm or [a for a in ARMS if all(
+        (root / a / f"fold_{f}" / "manifest.json").exists() for f in (1, 2, 3))]
+    for arm in arms:
         for fold in (1, 2, 3):
             manifest = root / arm / f"fold_{fold}" / "manifest.json"
             if json.loads(manifest.read_text(encoding="utf-8")).get("status") != "complete":

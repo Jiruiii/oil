@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 export NO_ALBUMENTATIONS_UPDATE=1 PYTHONUNBUFFERED=1 CUBLAS_WORKSPACE_CONFIG=:4096:8
 PY=.venv/bin/python
 arms=("$@")
-[ ${#arms[@]} -eq 0 ] && arms=(random hnm hnm_si)
+[ ${#arms[@]} -eq 0 ] && arms=(random hnm hnm_si)  # oof, oof_si: tools/run_hnm_oof.sh
 status=0
 for arm in "${arms[@]}"; do
   cfg=main/local_hnm_${arm}.yaml
