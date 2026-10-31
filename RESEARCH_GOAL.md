@@ -102,3 +102,4 @@
 | [HNM.md](HNM.md) | `preprocess/hnm/` EfficientNet OOF 第一版的用法（E、F 組改用 `preprocess/hnm_si/oof.py`） |
 | [RUN_LOG.md](RUN_LOG.md) | 每次執行的指令、輸出、結果（新的在上） |
 | [tools/README.md](tools/README.md) | 分析與比較工具一覽 |
+| [report_scripts/README.md](report_scripts/README.md) | 每週報告的分析與出圖程式（輸出在 repo 外的 `reports/`） |
