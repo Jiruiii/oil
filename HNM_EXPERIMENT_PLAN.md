@@ -12,9 +12,10 @@
 C−B −0.026、D−B −0.048（場景 bootstrap CI 皆不含 0），主因是 recall 下降。
 HNM 讓 test 背景小圖誤報少了約一半，但主指標不評這部分。**依決策閘門屬「C、D 劣於 B」，
 不進步驟 3、4；也不宣稱 HNM 有改善。**
+10/21 起另跑 E oof／F oof_si 兩組（第 6 節的 OOF 方法，改為與 B、C、D 同池同量），見 RUN_LOG 2026-10-21。
 
 相關文件：[HNM_SI_INTEGRATION.md](HNM_SI_INTEGRATION.md)（HNM_SI 實作與用法）、
-[HNM.md](HNM.md)（EfficientNet OOF 第一版）、[MODEL_HNM_OVERVIEW.md](MODEL_HNM_OVERVIEW.md)。
+[HNM.md](HNM.md)（EfficientNet OOF 第一版）；研究題目與決策見 [RESEARCH_GOAL.md](RESEARCH_GOAL.md)。
 每次實際執行的指令、輸出位置與前後差別記在 [RUN_LOG.md](RUN_LOG.md)。
 
 ## 0. 起點與已知數字

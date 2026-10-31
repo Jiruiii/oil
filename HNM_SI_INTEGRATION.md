@@ -5,7 +5,8 @@
 目標是將學長 `OIL_PROJECT_MutiBand_thesis/preprocess/HNM_SI` 的分割誤報探勘與
 光譜指數過濾，適配到目前 Sentinel-2／Landsat、八波段 VRT、Prithvi＋DeepLabV3
 及凍結三折實驗。**適配程式已實作於 `preprocess/hnm_si/`（見第 5 節），並以單元測試與
-真實資料小量煙霧測試驗證；尚未執行正式三折探勘，也未做後續分割訓練，不宣稱任何改善。**
+真實資料小量煙霧測試驗證。2026-10-17 已完成正式三折探勘，10/19 起用於分割訓練（C hnm、D hnm_si），
+結果見 [RUN_LOG.md](RUN_LOG.md)。**
 
 現有 `preprocess/hnm/` 是 EfficientNetV2-S＋OOF＋共用 embedding 第一版，
 使用方式仍見 [HNM.md](HNM.md)。它與本計畫是兩個獨立方法。
@@ -200,7 +201,7 @@ CFG=preprocess/hnm_si/config.example.yaml
 - 真實資料煙霧測試（fold 1 前 3 個 train 場景、真實 Prithvi＋DeepLabV3 探勘模型）：
   權重嚴格載入成功，約每景 12 秒、3,968 個窗，三個 arm 皆可輸出。完整 fold 1 約 27.5 萬個
   合格窗，粗估探勘 1 小時內，三折合計數小時（GPU）。
-- 尚未執行完整三折探勘；候選數量是否足以支撐「等於基準數量」的配額，要等 `mine` 完成才知道。
+- 完整三折探勘已於 2026-10-17 完成（每折約 27 萬合格窗、9 千～1.25 萬個有 FP），配額足夠，見 [RUN_LOG.md](RUN_LOG.md)。
 
 ### 匯出被選中的圖片（給人檢視）
 
