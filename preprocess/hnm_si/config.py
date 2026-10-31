@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ARMS = ("hnm_si", "hnm", "random")
+ARMS = ("hnm_si", "hnm", "random", "oof", "oof_si")
 
 DEFAULTS = {
     "outer_folds": [1, 2, 3], "seed": 42, "patch_size": 256, "stride": 192,
@@ -22,9 +22,14 @@ DEFAULTS = {
            "reflectance_offset": 1000.0},
     "selection": {"target_count": "baseline", "allow_shortfall": False,
                   "scene_outlier_sigma": None},
+    # oof / oof_si arms: EfficientNetV2-S classifiers scored scene-out-of-fold (see oof.py).
+    # Classifier settings follow preprocess/hnm; neg_pool is the fixed cached negative sample.
+    "oof": {"inner_folds": 5, "model_name": "tf_efficientnetv2_s", "pretrained": True,
+            "epochs": 70, "batch_size": 8, "workers": 8, "lr": 1e-4, "weight_decay": .01,
+            "classifier_neg_ratio": 5, "neg_pool": 15000, "infer_batch_size": 64},
 }
 PATH_KEYS = ("split_dir", "baseline_bg_tsv", "vrt_dir", "mask_dir", "output_dir")
-NESTED = ("rules", "si", "selection")
+NESTED = ("rules", "si", "selection", "oof")
 
 
 def _resolve(base, value):
@@ -94,6 +99,13 @@ def _validate(c):
     t = sel["target_count"]
     if not (t == "baseline" or (isinstance(t, int) and not isinstance(t, bool) and t > 0)):
         raise ValueError("selection.target_count must be 'baseline' or a positive integer")
+    o = c["oof"]
+    for k in ("inner_folds", "epochs", "batch_size", "classifier_neg_ratio", "neg_pool",
+              "infer_batch_size"):
+        if not isinstance(o[k], int) or o[k] < (2 if k == "inner_folds" else 1):
+            raise ValueError(f"oof.{k} must be a positive integer")
+    if not isinstance(o["workers"], int) or o["workers"] < 0 or o["lr"] <= 0:
+        raise ValueError("Invalid oof.workers or oof.lr")
     sig = sel["scene_outlier_sigma"]
     if sig is not None and (not isinstance(sig, (int, float)) or sig <= 0):
         raise ValueError("selection.scene_outlier_sigma must be null or positive")

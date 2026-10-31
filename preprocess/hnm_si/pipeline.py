@@ -26,7 +26,12 @@ from .stats import (ledoit_wolf_reference, lower_cutoff, mahalanobis, outlier_sc
 SCHEMA_VERSION = 1
 METHODS = {"hnm_si": "hnm_si_probe_fp_within_fold_train_only_v1",
            "hnm": "hnm_probe_fp_within_fold_train_only_v1",
-           "random": "random_eligible_control_train_only_v1"}
+           "random": "random_eligible_control_train_only_v1",
+           "oof": "oof_classifier_scene_oof_train_only_v1",
+           "oof_si": "oof_classifier_si_scene_oof_train_only_v1"}
+# Spectral-index columns the SI filter compares with the oil reference, per arm.
+SI_COLUMNS = {"hnm_si": ["p_mndwi", "p_ndi", "p_sr"],    # median over the probe's FP pixels
+              "oof_si": ["w_mndwi", "w_ndi", "w_sr"]}    # median over the window's mask==1 pixels
 MINING_FILES = ("config.py", "indices.py", "mining.py", "probe.py")
 
 
@@ -293,32 +298,46 @@ def select_fold(config, fold, arm=None, allow_partial=False):
     key_cols = ["scene", "x", "y"]
     if df.duplicated(key_cols).any():
         raise ValueError("Mined candidate coordinates are not unique")
-    if arm != "random":
+    oof_info = None
+    if arm in ("hnm", "hnm_si"):
         df.loc[df["n_fp"] < rules["min_fp_pixels"], "status"] = "no_fp"
+    elif arm in ("oof", "oof_si"):
+        from .oof import load_scores
+        scores, oof_manifest, oof_manifest_sha = load_scores(config, fold, mm)
+        df = df.merge(scores.drop(columns=[c for c in scores if c in df and c not in key_cols]),
+                      on=key_cols, how="left", validate="one_to_one")
+        if df["p_oil"].isna().any() or len(scores) != len(df):
+            raise ValueError("OOF scores do not cover the mined candidates")
+        # Hard = the scene-OOF classifier calls the oil-free window oil.
+        df.loc[df["p_oil"] < rules["prob_threshold"], "status"] = "oof_not_oil"
+        oof_info = {"oof_manifest_sha256": oof_manifest_sha,
+                    "miner_sha256": oof_manifest["miner_sha256"],
+                    "scores_sha256": oof_manifest["scores_sha256"]}
     report = {"fold": fold, "arm": arm, "mining_status": mm["status"],
               "scored_windows": int(len(df))}
     reference_info = None
-    if arm == "hnm_si":
+    if arm in SI_COLUMNS:
+        si_cols = SI_COLUMNS[arm]
         refs = pd.read_csv(mdir / "scene_reference.csv").set_index("scene")
         pool = np.load(mdir / "oil_pool.npy")
         if len(pool) < si_cfg["min_oil_pool"]:
             raise ValueError(f"Oil pool too small for covariance: {len(pool)}")
         ref = ledoit_wolf_reference(pool)
         live = df["status"] == "qualified"
-        has_p = df[["p_mndwi", "p_ndi", "p_sr"]].notna().all(axis=1)
+        has_p = df[si_cols].notna().all(axis=1)
         df.loc[live & ~has_p, "status"] = "fp_region_below_si_min"
         ref_ok = df["scene"].map(refs["reference_valid"]).fillna(False).astype(bool)
         live = df["status"] == "qualified"
         df.loc[live & ~ref_ok, "status"] = "no_oil_reference"
         live = df["status"] == "qualified"
         centers = refs.loc[df.loc[live, "scene"], ["oil_mndwi", "oil_ndi", "oil_sr"]].to_numpy()
-        points = df.loc[live, ["p_mndwi", "p_ndi", "p_sr"]].to_numpy()
+        points = df.loc[live, si_cols].to_numpy()
         df.loc[live, "d_si"] = mahalanobis(points, centers, ref["precision"])
         cutoff = lower_cutoff(df.loc[live, "d_si"], si_cfg["top_q"])
         if cutoff is not None:
             df.loc[live & (df["d_si"] <= cutoff), "status"] = "too_close_to_oil"
         reference_info = {
-            "names": list(SI_NAMES), "pool_pixels": ref["n"],
+            "names": list(SI_NAMES), "candidate_columns": si_cols, "pool_pixels": ref["n"],
             "reference_scenes": int(refs["reference_valid"].sum()),
             "pool_median": ref["median"].tolist(), "pool_mean": ref["mean"].tolist(),
             "covariance": ref["cov"].tolist(), "shrinkage": ref["shrinkage"],
@@ -381,14 +400,18 @@ def select_fold(config, fold, arm=None, allow_partial=False):
         "candidates_sha256": sha256(out / "candidates_scored.tsv"),
         "mining_manifest_sha256": sha256(mdir / "mining_manifest.json"),
         "selected_count": len(selected), "target_count": target, "shortfall": shortfall,
-        "probe": plan["probe"] | {"scope": "within_fold_train_only"},
+        "probe": (plan["probe"] | {"scope": "within_fold_train_only"}) if oof_info is None else {
+            "kind": "efficientnet_oof_classifiers", "scope": "scene_oof_within_fold_train",
+            "checkpoint_sha256": oof_info["oof_manifest_sha256"], **oof_info},
         "config": config, "implementation_sha256": _implementation_hashes(),
         "sensor_policy": "pooled_oil_covariance_all_sensors_per_sensor_reporting_only",
         "label_policy": {"false_positive_background": "mask==1", "others_mask2": "recorded_not_fp",
                          "unlabeled_mask255": "never_fp"},
         "isolation": "oil reference, covariance and cutoff use this fold's train scenes only",
-        "validation_note": "probe best.pt was chosen with the fold's val set; mining is "
-                           "within-fold on train scenes, not scene-level out-of-fold"}
+        "validation_note": ("probe best.pt was chosen with the fold's val set; mining is "
+                            "within-fold on train scenes, not scene-level out-of-fold")
+        if oof_info is None else ("each window was scored by a classifier that never trained "
+                                  "on its scene; the pool and SI reference come from HNM_SI mining")}
     _write_json(out / "manifest.json", manifest)
     print(f"Fold {fold} [{arm}]: {len(selected)}/{target} backgrounds -> {out}", flush=True)
     return manifest
@@ -412,7 +435,9 @@ def _check_selection(config, ctx, selected):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
-    parser.add_argument("--stage", choices=("preflight", "mine", "select"), required=True)
+    parser.add_argument("--stage", choices=("preflight", "mine", "oof", "select"), required=True,
+                        help="oof: train scene-OOF classifiers and score the mined pool "
+                             "(needed by --arm oof / oof_si)")
     parser.add_argument("--fold", type=int)
     parser.add_argument("--arm", choices=ARMS)
     parser.add_argument("--max-scenes", type=int,
@@ -426,7 +451,7 @@ def main(argv=None):
     if any(f not in config["outer_folds"] for f in folds):
         parser.error("--fold is not in configured outer_folds")
     device = None
-    if args.stage in ("preflight", "mine"):
+    if args.stage in ("preflight", "mine", "oof"):
         import torch
         device = torch.device(config["device"])
         if device.type == "cuda" and not torch.cuda.is_available():
@@ -437,6 +462,9 @@ def main(argv=None):
                   flush=True)
         elif args.stage == "mine":
             mine_fold(config, fold, device, args.max_scenes)
+        elif args.stage == "oof":
+            from .oof import mine_oof
+            mine_oof(config, fold, device)
         else:
             select_fold(config, fold, args.arm, args.allow_partial)
 

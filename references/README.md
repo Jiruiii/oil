@@ -7,7 +7,7 @@
 [hnm_si_original](hnm_si_original/README.md) 保存 `OIL_PROJECT_MutiBand_thesis` 的
 HNM_SI 四步流程、driver、光譜門檻驗證腳本與 probe 訓練設定，逐檔保持原樣並附 SHA256。
 來源、收錄範圍與已知差異見該目錄 README；移植方案見
-[HNM_SI_INTEGRATION.md](../HNM_SI_INTEGRATION.md)。目前尚未接入。
+[HNM_SI_INTEGRATION.md](../HNM_SI_INTEGRATION.md)。已接入為 `preprocess/hnm_si/`。
 
 ## SAR OOF 第一版的參考來源
 

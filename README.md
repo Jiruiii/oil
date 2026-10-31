@@ -1,8 +1,8 @@
 # 油汙偵測專案 — Onboarding 版（GT_expand 分支 B）
 
-模型與兩種 HNM 方法的概覽見 [MODEL_HNM_OVERVIEW.md](MODEL_HNM_OVERVIEW.md)。
-已接入的 OOF 第一版操作見 [HNM.md](HNM.md)；學長 HNM_SI 的接入評估與待辦見
-[HNM_SI_INTEGRATION.md](HNM_SI_INTEGRATION.md)（尚未實作）。既有實驗預設不啟用 HNM；
+**研究題目、評估方式與已定案的決策見 [RESEARCH_GOAL.md](RESEARCH_GOAL.md)**（含所有文件的地圖）。
+HNM 用法：學長 HNM_SI 見 [HNM_SI_INTEGRATION.md](HNM_SI_INTEGRATION.md)，EfficientNet OOF 第一版見
+[HNM.md](HNM.md)；實驗設計與結果見 [HNM_EXPERIMENT_PLAN.md](HNM_EXPERIMENT_PLAN.md)、[RUN_LOG.md](RUN_LOG.md)。既有實驗預設不啟用 HNM；
 `baseline-gt-expand-3fold` tag 保存加入 HNM 前的程式與凍結三折名冊。
 
 > 本目錄是從正式研究 repo `OIL_PROJECT_MutiBand_GT_expand` 分出來的**精簡版**，
